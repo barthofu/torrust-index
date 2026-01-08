@@ -26,20 +26,25 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'main'",
+            "name": "Debug executable 'torrust-index'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=main",
+                    "--bin=torrust-index",
                     "--package=torrust-index"
                 ],
                 "filter": {
-                    "name": "main",
+                    "name": "torrust-index",
                     "kind": "bin"
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "TORRUST_INDEX_API_CORS_PERMISSIVE": "true",
+                "TORRUST_INDEX_CONFIG_TOML_PATH": "/home/coder/torrust-index/storage/index/etc/index.toml",
+            },
+            // "envFile": "${workspaceFolder}/.env"
         },
         {
             "type": "lldb",

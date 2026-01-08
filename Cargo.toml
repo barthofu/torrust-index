@@ -96,6 +96,8 @@ tracing-subscriber = { version = "0", features = ["json"] }
 url = { version = "2", features = ["serde"] }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4"] }
+openidconnect = { version = "3", default-features = false, features = ["reqwest", "rustls-tls"] }
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

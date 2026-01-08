@@ -5,6 +5,7 @@ pub type CategoryId = i64;
 pub type TagId = i64;
 pub type UtcDateTime = String; // %Y-%m-%d %H:%M:%S
 
+#[allow(dead_code)]
 #[derive(Deserialize, PartialEq, Debug)]
 pub struct ErrorResponse {
     pub error: String,

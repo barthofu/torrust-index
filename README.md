@@ -115,6 +115,62 @@ The following services are provided by the default configuration:
 - API
   - `http://127.0.0.1:3001/`.
 
+### OIDC Authentication (optional)
+
+To enable OpenID Connect login and automatic local user provisioning, add the following section to your `index.toml` (or via environment overrides):
+
+```toml
+[auth]
+user_claim_token_pepper = "change-me"
+
+[auth.oidc]
+enabled = true
+issuer_url = "https://accounts.example.com"     # Your OIDC issuer
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+redirect_path = "/v1/user/oidc/callback"        # Keep default unless fronted by a proxy
+scopes = ["openid", "profile", "email"]
+username_claim = "preferred_username"
+email_claim = "email"
+# Redirect back to GUI with token
+post_login_redirect_url = "http://localhost:3000/oidc-callback"
+```
+
+Endpoints:
+- Start flow: `GET /v1/user/oidc/login` (redirects to provider)
+- Callback: `GET /v1/user/oidc/callback?code=...&state=...` (returns JSON token response on success)
+
+On first successful OIDC login, a local user is created automatically. If an email is provided, it is marked verified.
+
+#### OIDC Admin Groups
+
+Grant administrator rights based on a configured group membership in your IdP.
+
+- `auth.oidc.groups_claim`: claim path to read groups (default `groups`). Dot paths supported (e.g., `realm_access.roles`).
+- `auth.oidc.admin_group`: exact group name that grants admin rights when present.
+
+Example:
+
+```toml
+[auth.oidc]
+enabled = true
+issuer_url = "https://your-idp"
+client_id = "torrust"
+client_secret = "***"
+redirect_path = "/v1/user/oidc/callback"
+scopes = ["openid", "profile", "email", "groups"]
+username_claim = "preferred_username"
+email_claim = "email"
+post_login_redirect_url = "http://localhost:3000/oidc-callback"
+
+groups_claim = "groups"            # or "realm_access.roles"
+admin_group = "torrust-admins"
+```
+
+Notes:
+- Admin promotion occurs at login if the user is in `admin_group`.
+- Auto-revocation when leaving the group is not enabled by default.
+
 ## Documentation
 
 - [API (Version 1)][api]
