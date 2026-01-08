@@ -407,7 +407,9 @@ fn build_announce_url_with_key(base_url: &Url, tracker_key: &str) -> Url {
         url.set_path(&format!("{}/", url.path()));
     }
 
-    url.join(tracker_key).expect("tracker key should be a valid URL segment")
+    url.set_path(&format!("{}announce/{}", url.path(), tracker_key));
+
+    url
 }
 
 /// Temporary patch to map `StatusCode` from crate `http` 0.2.11 to `http` v1.0.0
