@@ -10,6 +10,7 @@ on:
     branches:
       - "develop"
       - "main"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -104,6 +105,9 @@ jobs:
     needs: context
     if: needs.context.outputs.continue == 'true' && needs.context.outputs.type == 'development'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - id: meta
@@ -111,16 +115,17 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            "${{ vars.DOCKER_HUB_USERNAME }}/${{vars.DOCKER_HUB_REPOSITORY_NAME }}"
+            ghcr.io/${{ github.repository_owner }}/torrust-index
           tags: |
             type=ref,event=branch
 
       - id: login
-        name: Login to Docker Hub
+        name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ vars.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: setup
         name: Setup Toolchain
@@ -142,6 +147,9 @@ jobs:
     needs: context
     if: needs.context.outputs.continue == 'true' && needs.context.outputs.type == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - id: meta
@@ -149,7 +157,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            "${{ vars.DOCKER_HUB_USERNAME }}/${{vars.DOCKER_HUB_REPOSITORY_NAME }}"
+            ghcr.io/${{ github.repository_owner }}/torrust-index
           tags: |
             type=semver,value=${{ needs.context.outputs.version }},pattern={{raw}}
             type=semver,value=${{ needs.context.outputs.version }},pattern={{version}}
@@ -157,11 +165,12 @@ jobs:
             type=semver,value=${{ needs.context.outputs.version }},pattern={{major}}.{{minor}}
 
       - id: login
-        name: Login to Docker Hub
+        name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ vars.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: setup
         name: Setup Toolchain
