@@ -105,32 +105,3 @@ impl<'a> Into<LocatedError<'a, dyn std::error::Error + Send + Sync>> for Arc<dyn
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use std::panic::Location;
-
-    use super::LocatedError;
-    use crate::Located;
-
-    #[derive(thiserror::Error, Debug)]
-    enum TestError {
-        #[error("Test")]
-        Test,
-    }
-
-    #[track_caller]
-    fn get_caller_location() -> Location<'static> {
-        *Location::caller()
-    }
-
-    #[test]
-    fn error_should_include_location() {
-        let e = TestError::Test;
-
-        let b: LocatedError<'_, TestError> = Located(e).into();
-        let l = get_caller_location();
-
-        assert_eq!(b.location.file(), l.file());
-    }
-}

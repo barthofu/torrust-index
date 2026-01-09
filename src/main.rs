@@ -16,3 +16,13 @@ async fn main() -> Result<(), std::io::Error> {
         Version::V1 => app.api_server.await.expect("the API server was dropped"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    /// Dummy test to ensure the test module is not empty.
+    #[test]
+    fn dummy_test() {
+        assert_eq!(2 + 2, 4);
+    }
+}

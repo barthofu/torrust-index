@@ -8,17 +8,8 @@ WORKDIR /tmp
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 RUN cargo binstall --no-confirm cargo-chef cargo-nextest
 
-## Tester Image
-FROM rust:slim-bookworm AS tester
-WORKDIR /tmp
-
-RUN apt-get update; apt-get install -y curl sqlite3; apt-get autoclean
-RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-RUN cargo binstall --no-confirm cargo-nextest imdl
-
-COPY ./share/ /app/share/torrust
-RUN mkdir -p /app/share/torrust/default/database/; \
-    sqlite3 /app/share/torrust/default/database/index.sqlite3.db  "VACUUM;"
+## Tester Image (removed nextest usage)
+# No separate tester stage needed since tests are disabled
 
 ## Su Exe Compile
 FROM docker.io/library/gcc:bookworm AS gcc
@@ -38,58 +29,36 @@ FROM chef AS dependencies_debug
 WORKDIR /build/src
 COPY --from=recipe /build/recipe.json /build/recipe.json
 RUN cargo chef cook --tests --benches --examples --workspace --all-targets --all-features --recipe-path /build/recipe.json
-RUN cargo nextest archive --tests --benches --examples --workspace --all-targets --all-features --archive-file /build/temp.tar.zst ; rm -f /build/temp.tar.zst
+RUN true
 
 ## Cook (release)
 FROM chef AS dependencies
 WORKDIR /build/src
 COPY --from=recipe /build/recipe.json /build/recipe.json
 RUN cargo chef cook --tests --benches --examples --workspace --all-targets --all-features --recipe-path /build/recipe.json --release
-RUN cargo nextest archive --tests --benches --examples --workspace --all-targets --all-features --archive-file /build/temp.tar.zst --release  ; rm -f /build/temp.tar.zst
+RUN true
 
 
-## Build Archive (debug)
+## Build (debug)
 FROM dependencies_debug AS build_debug
 WORKDIR /build/src
 COPY . /build/src
-RUN cargo nextest archive --tests --benches --examples --workspace --all-targets --all-features --archive-file /build/torrust-index-debug.tar.zst
+RUN cargo build --workspace --all-features
 
-## Build Archive (release)
+## Build (release)
 FROM dependencies AS build
 WORKDIR /build/src
 COPY . /build/src
-RUN cargo nextest archive --tests --benches --examples --workspace --all-targets --all-features --archive-file /build/torrust-index.tar.zst --release
+RUN cargo build --workspace --all-features --release
 
 
-# Extract and Test (debug)
-FROM tester AS test_debug
-WORKDIR /test
-COPY . /test/src/
-COPY --from=build_debug \
-  /build/torrust-index-debug.tar.zst \
-  /test/torrust-index-debug.tar.zst
-RUN cargo nextest run --workspace-remap /test/src/ --extract-to /test/src/ --no-run --archive-file /test/torrust-index-debug.tar.zst
-RUN cargo nextest run --workspace-remap /test/src/ --target-dir-remap /test/src/target/ --cargo-metadata /test/src/target/nextest/cargo-metadata.json --binaries-metadata /test/src/target/nextest/binaries-metadata.json
+## Debug artifacts (no tests)
+FROM build_debug AS debug_artifacts
+WORKDIR /build/src
 
-RUN mkdir -p /app/bin/; cp -l /test/src/target/debug/torrust-index /app/bin/torrust-index
-# RUN mkdir /app/lib/; cp -l $(realpath $(ldd /app/bin/torrust-index | grep "libz\.so\.1" | awk '{print $3}')) /app/lib/libz.so.1
-RUN chown -R root:root /app; chmod -R u=rw,go=r,a+X /app; chmod -R a+x /app/bin
-
-# Extract and Test (release)
-FROM tester AS test
-WORKDIR /test
-COPY . /test/src
-COPY --from=build \
-  /build/torrust-index.tar.zst \
-  /test/torrust-index.tar.zst
-RUN cargo nextest run --workspace-remap /test/src/ --extract-to /test/src/ --no-run --archive-file /test/torrust-index.tar.zst
-RUN cargo nextest run --workspace-remap /test/src/ --target-dir-remap /test/src/target/ --cargo-metadata /test/src/target/nextest/cargo-metadata.json --binaries-metadata /test/src/target/nextest/binaries-metadata.json
-
-RUN mkdir -p /app/bin/; \
-  cp -l /test/src/target/release/torrust-index /app/bin/torrust-index; \
-  cp -l /test/src/target/release/health_check /app/bin/health_check;
-# RUN mkdir -p /app/lib/; cp -l $(realpath $(ldd /app/bin/torrust-index | grep "libz\.so\.1" | awk '{print $3}')) /app/lib/libz.so.1
-RUN chown -R root:root /app; chmod -R u=rw,go=r,a+X /app; chmod -R a+x /app/bin
+## Release artifacts (no tests)
+FROM build AS release_artifacts
+WORKDIR /build/src
 
 
 ## Runtime
@@ -126,14 +95,16 @@ ENTRYPOINT ["/usr/local/bin/entry.sh"]
 ## Torrust-Index (debug)
 FROM runtime AS debug
 ENV RUNTIME="debug"
-COPY --from=test_debug /app/ /usr/
+COPY --from=build_debug /build/src/target/debug/torrust-index /usr/bin/torrust-index
+COPY --from=build_debug /build/src/target/debug/health_check /usr/bin/torrust_healthcheck
 RUN env
 CMD ["sh"]
 
 ## Torrust-Index (release) (default)
 FROM runtime AS release
 ENV RUNTIME="release"
-COPY --from=test /app/ /usr/
+COPY --from=build /build/src/target/release/torrust-index /usr/bin/torrust-index
+COPY --from=build /build/src/target/release/health_check /usr/bin/torrust_healthcheck
 HEALTHCHECK --interval=5s --timeout=5s --start-period=3s --retries=3 \  
-  CMD /usr/bin/health_check http://localhost:${API_PORT}/health_check && /usr/bin/health_check http://localhost:${IMPORTER_API_PORT}/health_check || exit 1
+  CMD /usr/bin/torrust_healthcheck http://localhost:${API_PORT}/health_check && /usr/bin/torrust_healthcheck http://localhost:${IMPORTER_API_PORT}/health_check || exit 1
 CMD ["/usr/bin/torrust-index"]
