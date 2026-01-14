@@ -20,6 +20,7 @@ use crate::models::torrent_file::{
 use crate::models::torrent_tag::{TagId, TorrentTag};
 use crate::models::tracker_key::TrackerKey;
 use crate::models::user::{User, UserAuthentication, UserCompact, UserId, UserListing, UserProfile};
+use crate::models::user_api_key::UserApiKey;
 use crate::services::torrent::{CanonicalInfoHashGroup, DbTorrentInfoHash};
 use crate::utils::clock::{self, datetime_now, DATETIME_FORMAT};
 use crate::utils::hex::from_bytes;
@@ -313,6 +314,72 @@ impl Database for Sqlite {
             .bind(user_id)
             .bind(key)
             .bind(tracker_key.valid_until)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(|_| database::Error::Error)
+    }
+
+    async fn insert_user_api_key_and_get_id(
+        &self,
+        user_id: i64,
+        name: &str,
+        key_prefix: &str,
+        key_hash: &str,
+        created_at: i64,
+    ) -> Result<i64, database::Error> {
+        query("INSERT INTO torrust_user_api_keys (user_id, name, key_prefix, key_hash, created_at) VALUES ($1, $2, $3, $4, $5)")
+            .bind(user_id)
+            .bind(name)
+            .bind(key_prefix)
+            .bind(key_hash)
+            .bind(created_at)
+            .execute(&self.pool)
+            .await
+            .map(|v| v.last_insert_rowid())
+            .map_err(|_| database::Error::Error)
+    }
+
+    async fn get_user_api_keys(&self, user_id: i64) -> Result<Vec<UserApiKey>, database::Error> {
+        query_as::<_, UserApiKey>(
+            "SELECT api_key_id, user_id, name, key_prefix, created_at, last_used_at, revoked_at FROM torrust_user_api_keys WHERE user_id = ? ORDER BY created_at DESC",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| database::Error::Error)
+    }
+
+    async fn revoke_user_api_key(&self, user_id: i64, api_key_id: i64, revoked_at: i64) -> Result<(), database::Error> {
+        query("UPDATE torrust_user_api_keys SET revoked_at = ? WHERE api_key_id = ? AND user_id = ?")
+            .bind(revoked_at)
+            .bind(api_key_id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|_| database::Error::Error)
+            .and_then(|v| {
+                if v.rows_affected() > 0 {
+                    Ok(())
+                } else {
+                    Err(database::Error::Error)
+                }
+            })
+    }
+
+    async fn get_user_id_from_api_key_hash(&self, key_hash: &str) -> Result<Option<UserId>, database::Error> {
+        query_as::<_, (i64,)>("SELECT user_id FROM torrust_user_api_keys WHERE key_hash = ? AND revoked_at IS NULL LIMIT 1")
+            .bind(key_hash)
+            .fetch_optional(&self.pool)
+            .await
+            .map(|row| row.map(|(user_id,)| user_id))
+            .map_err(|_| database::Error::Error)
+    }
+
+    async fn touch_user_api_key_last_used(&self, key_hash: &str, last_used_at: i64) -> Result<(), database::Error> {
+        query("UPDATE torrust_user_api_keys SET last_used_at = ? WHERE key_hash = ?")
+            .bind(last_used_at)
+            .bind(key_hash)
             .execute(&self.pool)
             .await
             .map(|_| ())

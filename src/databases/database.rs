@@ -16,6 +16,7 @@ use crate::models::torrent_file::{DbTorrent, Torrent, TorrentFile};
 use crate::models::torrent_tag::{TagId, TorrentTag};
 use crate::models::tracker_key::TrackerKey;
 use crate::models::user::{User, UserAuthentication, UserCompact, UserId, UserProfile};
+use crate::models::user_api_key::UserApiKey;
 use crate::services::torrent::CanonicalInfoHashGroup;
 
 /// Database tables to be truncated when upgrading from v1.0.0 to v2.0.0.
@@ -28,6 +29,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "torrust_torrent_tracker_stats",
     "torrust_torrents",
     "torrust_tracker_keys",
+    "torrust_user_api_keys",
     "torrust_user_authentication",
     "torrust_user_bans",
     "torrust_user_invitation_uses",
@@ -244,6 +246,30 @@ pub trait Database: Sync + Send {
 
     /// Link a `TrackerKey` to a certain user with `user_id`.
     async fn add_tracker_key(&self, user_id: i64, tracker_key: &TrackerKey) -> Result<(), Error>;
+
+    // API keys
+
+    /// Create a new API key for a user. Stores only a hash.
+    async fn insert_user_api_key_and_get_id(
+        &self,
+        user_id: i64,
+        name: &str,
+        key_prefix: &str,
+        key_hash: &str,
+        created_at: i64,
+    ) -> Result<i64, Error>;
+
+    /// List all API keys for a user (without the secret).
+    async fn get_user_api_keys(&self, user_id: i64) -> Result<Vec<UserApiKey>, Error>;
+
+    /// Revoke an API key by id for a given user.
+    async fn revoke_user_api_key(&self, user_id: i64, api_key_id: i64, revoked_at: i64) -> Result<(), Error>;
+
+    /// Find a user id for an API key hash (only non-revoked keys).
+    async fn get_user_id_from_api_key_hash(&self, key_hash: &str) -> Result<Option<UserId>, Error>;
+
+    /// Update last_used_at for a key hash.
+    async fn touch_user_api_key_last_used(&self, key_hash: &str, last_used_at: i64) -> Result<(), Error>;
 
     /// Delete user and all related user data with `user_id`.
     async fn delete_user(&self, user_id: i64) -> Result<(), Error>;

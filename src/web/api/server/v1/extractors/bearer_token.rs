@@ -29,7 +29,16 @@ where
         let header = parts.headers.get("Authorization");
 
         match header {
-            Some(header_value) => Ok(Extract(Some(BearerToken(parse_token(header_value))))),
+            Some(header_value) => {
+                // Only attempt to parse when it is a Bearer token.
+                // This avoids panics when using other auth schemes.
+                let auth_header = header_value.to_str().unwrap_or("");
+                if auth_header.trim_start().starts_with("Bearer ") {
+                    Ok(Extract(Some(BearerToken(parse_token(header_value)))))
+                } else {
+                    Ok(Extract(None))
+                }
+            }
             None => Ok(Extract(None)),
         }
     }

@@ -8,7 +8,8 @@ use axum::Router;
 
 use super::handlers::{
     ban_handler, email_verification_handler, get_user_profiles_handler, oidc_callback_handler, oidc_login_handler,
-    renew_token_handler, tracker_announce_handler, verify_token_handler,
+    renew_token_handler, revoke_api_key_handler, tracker_announce_handler, user_api_keys_create_handler,
+    user_api_keys_list_handler, verify_token_handler,
 };
 use crate::common::AppData;
 
@@ -28,6 +29,17 @@ pub fn router(app_data: Arc<AppData>) -> Router {
         .route(
             "/tracker/announce",
             get(tracker_announce_handler).with_state(app_data.clone()),
+        )
+        // API keys (for app integrations)
+        .route(
+            "/api-keys",
+            get(user_api_keys_list_handler)
+                .post(user_api_keys_create_handler)
+                .with_state(app_data.clone()),
+        )
+        .route(
+            "/api-keys/:api_key_id",
+            delete(revoke_api_key_handler).with_state(app_data.clone()),
         )
         // Profile
         // Change password disabled when using OIDC-only auth

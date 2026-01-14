@@ -14,10 +14,12 @@ use serde::Deserialize;
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Default)]
 struct AnyClaims(serde_json::Value);
 impl openidconnect::AdditionalClaims for AnyClaims {}
-use super::forms::{ChangePasswordForm, JsonWebToken, LoginForm, RegistrationForm};
-use super::responses::{self};
+use super::forms::{ChangePasswordForm, CreateApiKeyForm, JsonWebToken, LoginForm, RegistrationForm};
+use super::responses::{self, api_keys_list, created_api_key, revoked_api_key};
 use crate::common::AppData;
 use crate::services::user::ListingRequest;
+use crate::services::{hasher};
+use crate::utils::clock;
 use crate::web::api::server::v1::extractors::optional_user_id::ExtractOptionalLoggedInUser;
 use crate::web::api::server::v1::extractors::user_id::ExtractLoggedInUser;
 use crate::web::api::server::v1::responses::OkResponseData;
@@ -759,6 +761,78 @@ pub async fn get_user_profiles_handler(
 
     match app_data.listing_service.generate_user_profile_listing(&listing).await {
         Ok(users) => Json(crate::web::api::server::v1::responses::OkResponseData { data: users }).into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+// API Keys
+
+fn generate_api_key_secret() -> String {
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    format!(
+        "ti_{}",
+        base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, bytes)
+    )
+}
+
+#[derive(Deserialize)]
+pub struct ApiKeyIdParam(i64);
+
+/// List API keys for the current user (no secrets).
+#[allow(clippy::unused_async)]
+pub async fn user_api_keys_list_handler(
+    State(app_data): State<Arc<AppData>>,
+    ExtractLoggedInUser(user_id): ExtractLoggedInUser,
+) -> Response {
+    match app_data.database.get_user_api_keys(user_id).await {
+        Ok(keys) => api_keys_list(keys).into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+/// Create a new API key for the current user.
+///
+/// The secret is returned only once.
+#[allow(clippy::unused_async)]
+pub async fn user_api_keys_create_handler(
+    State(app_data): State<Arc<AppData>>,
+    ExtractLoggedInUser(user_id): ExtractLoggedInUser,
+    extract::Json(form): extract::Json<CreateApiKeyForm>,
+) -> Response {
+    let api_key = generate_api_key_secret();
+    let key_prefix: String = api_key.chars().take(8).collect();
+    let created_at = clock::now() as i64;
+
+    let settings = app_data.cfg.settings.read().await;
+    let pepper = settings.auth.user_claim_token_pepper.to_string();
+    let key_hash = hasher::sha1(&format!("{pepper}:{api_key}"));
+
+    match app_data
+        .database
+        .insert_user_api_key_and_get_id(user_id, &form.name, &key_prefix, &key_hash, created_at)
+        .await
+    {
+        Ok(api_key_id) => created_api_key(api_key_id, form.name, key_prefix, api_key, created_at).into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+/// Revoke an API key by id for the current user.
+#[allow(clippy::unused_async)]
+pub async fn revoke_api_key_handler(
+    State(app_data): State<Arc<AppData>>,
+    ExtractLoggedInUser(user_id): ExtractLoggedInUser,
+    Path(api_key_id): Path<ApiKeyIdParam>,
+) -> Response {
+    let revoked_at = clock::now() as i64;
+
+    match app_data
+        .database
+        .revoke_user_api_key(user_id, api_key_id.0, revoked_at)
+        .await
+    {
+        Ok(()) => revoked_api_key(api_key_id.0).into_response(),
         Err(error) => error.into_response(),
     }
 }

@@ -31,3 +31,10 @@ pub struct ChangePasswordForm {
     pub password: String,
     pub confirm_password: String,
 }
+
+// API Keys
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CreateApiKeyForm {
+    pub name: String,
+}
