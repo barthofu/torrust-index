@@ -109,8 +109,10 @@ pub async fn login_handler(
 
 #[derive(Deserialize)]
 pub struct OidcCallbackQuery {
-    code: String,
-    state: String,
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -262,10 +264,48 @@ pub async fn oidc_callback_handler(
         );
     }
 
+    // If the provider returned an error (e.g., access_denied), handle gracefully
+    if let Some(err) = &params.error {
+        let desc = params.error_description.clone().unwrap_or_default();
+        if let Some(ref redirect_url) = oidc.post_login_redirect_url {
+            let sep = if redirect_url.contains('?') { '&' } else { '?' };
+            let final_url = format!(
+                "{}{}error={}&error_description={}",
+                redirect_url,
+                sep,
+                urlencoding::encode(err),
+                urlencoding::encode(&desc)
+            );
+            return Redirect::to(&final_url).into_response();
+        }
+        return crate::web::api::server::v1::responses::json_error_response(
+            hyper::StatusCode::UNAUTHORIZED,
+            &crate::web::api::server::v1::responses::ErrorResponseData {
+                error: format!(
+                    "OIDC authorization failed: {}{}{}",
+                    err,
+                    if desc.is_empty() { "" } else { ": " },
+                    desc
+                ),
+            },
+        );
+    }
+
     // Verify state JWT and get nonce
+    let state_param = match &params.state {
+        Some(s) => s,
+        None => {
+            return crate::web::api::server::v1::responses::json_error_response(
+                hyper::StatusCode::BAD_REQUEST,
+                &crate::web::api::server::v1::responses::ErrorResponseData {
+                    error: "Missing OIDC state".to_string(),
+                },
+            )
+        }
+    };
     let key = pepper.as_bytes();
     let token_data = match decode::<OidcStateClaims>(
-        &params.state,
+        state_param,
         &DecodingKey::from_secret(key),
         &Validation::new(Algorithm::HS256),
     ) {
@@ -338,8 +378,19 @@ pub async fn oidc_callback_handler(
     .set_redirect_uri(redirect_url);
 
     // Exchange code
+    let code = match &params.code {
+        Some(c) => c.clone(),
+        None => {
+            return crate::web::api::server::v1::responses::json_error_response(
+                hyper::StatusCode::BAD_REQUEST,
+                &crate::web::api::server::v1::responses::ErrorResponseData {
+                    error: "Missing authorization code".to_string(),
+                },
+            )
+        }
+    };
     let token_res = match client
-        .exchange_code(AuthorizationCode::new(params.code))
+        .exchange_code(AuthorizationCode::new(code))
         .request_async(async_http_client)
         .await
     {
